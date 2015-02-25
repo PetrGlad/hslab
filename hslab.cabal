@@ -1,0 +1,13 @@
+cabal-version: >= 1.2.3
+name: hslab
+synopsis:
+  Working on Haskell tutorial
+version: 0.0.1
+build-type: Simple
+category: Accessibility
+executable hslab
+  main-is: Main.hs
+  hs-source-dirs: src
+  build-depends:
+    base,
+    containers

@@ -1,0 +1,24 @@
+https://wiki.haskell.org/GHC/GHCi#GHCi_on_Acid
+
+
+
+
+
+:m - Prelude
+:m + GOA
+setLambdabotHome "/home/petr/.cabal/bin"
+:def bs        lambdabot "botsnack"
+:def pl        lambdabot "pl"
+:def unpl      lambdabot "unpl"
+:def redo      lambdabot "redo"
+:def undo      lambdabot "undo"
+:def index     lambdabot "index"
+:def docs      lambdabot "docs"
+:def instances lambdabot "instances"
+:def hoogle    lambdabot "hoogle"
+:def source    lambdabot "fptools"
+:def where     lambdabot "where"
+:def version   lambdabot "version"
+:def src       lambdabot "src"
+
+-- :set -fno-print-bind-result
