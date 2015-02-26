@@ -1,3 +1,6 @@
+-- http://www.seas.upenn.edu/~cis194/lectures.html
+-- 2nd assignment
+
 {-# OPTIONS_GHC -Wall #-}
 module Mastermind where
 -- import Control.Exception (assert)
