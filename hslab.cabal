@@ -1,13 +1,26 @@
 cabal-version: >= 1.2.3
 name: hslab
 synopsis:
-  Working on Haskell tutorial
+  Working on a Haskell tutorial
 version: 0.0.1
 build-type: Simple
-category: Accessibility
+category: Homework
 executable hslab
   main-is: Main.hs
   hs-source-dirs: src
   build-depends:
     base,
-    containers
+    containers,
+    bytestring,
+    aeson,
+    text
+executable io
+  main-is: Main.hs
+  hs-source-dirs: src/io
+  build-depends:
+    base,
+    containers,
+    bytestring,
+    aeson,
+    text
+
