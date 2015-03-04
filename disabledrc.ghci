@@ -22,3 +22,9 @@ setLambdabotHome "/home/petr/.cabal/bin"
 :def src       lambdabot "src"
 
 -- :set -fno-print-bind-result
+-- :set -Wall
+-- :set -fno-warn-type-defaults
+-- :set -fno-warn-unused-do-bind
+-- :set -XOverloadedStrings
+-- :set -XRecordWildCards
+

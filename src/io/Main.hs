@@ -70,7 +70,7 @@ updateSum d (Just prev) = Just (prev + d)
 
 updateFlow :: Map String Integer -> Transaction -> Map String Integer
 updateFlow flow t = let d = amount t
-                    in Map.alter (updateSum d) (from t)
+                    in Map.alter (updateSum d) (to t)
                        $ Map.alter (updateSum (-d)) (from t) flow
 
 getFlow :: [Transaction] -> Map String Integer
@@ -89,10 +89,30 @@ getCriminal flow = snd $ maximum $ map (\(x, y) -> (y, x)) $ Map.toList flow
 -- Exercise 7 -----------------------------------------
 
 reverseTx :: Transaction -> Transaction
+-- XXX Probably it should be better to swap source and destination
 reverseTx t = t {amount=(-(amount t)), tid="should-be-generated"}
 
-undoTs :: Map String Integer -> [TId] -> [Transaction]
-undoTs ts tIds = undefined -- map reverseTx $ selectTs ts tIds
+------ undoTs :: Map String Integer -> [TId] -> [Transaction]
+-- undoTs ts tIds = undefined
+
+-- Note not the algorithm given in the assighment (it seemed too contrived,
+-- just reversing transactions would introduce least confusion).
+undoTs :: String -> Map String Integer -> [TId] -> [Transaction]
+undoTs adminAcc flow newTIds = concatMap (uncurry resolveTx) $ Map.toList flow
+  where
+    resolveTx accId d
+      | d == 0 = []
+      | d < 0 = [Transaction {
+                        from=adminAcc,
+                        to=accId,
+                        amount=abs d,
+                        tid="TODO Generate 222"}]
+      | otherwise = [Transaction {
+                        from=accId,
+                        to=adminAcc,
+                        amount=d,
+                        tid="TODO Generate 222"}]
+
 
 -- Exercise 8 -----------------------------------------
 
@@ -114,8 +134,9 @@ doEverything dog1 dog2 trans vict fids out = do
       case mids of
         Nothing  -> error "No ids"
         Just ids -> do
-          let flow = getFlow ts       
-          writeJSON out (undoTs flow ids)
+          let flow = getFlow ts
+              adminAcc = "Bank admin, the problem resolver"
+          writeJSON out (undoTs adminAcc flow ids)
           return (getCriminal flow)
 
 main :: IO ()
@@ -132,4 +153,3 @@ main = do
                         "new-ids.json"
                         "new-transactions.json"
   putStrLn crim
-
