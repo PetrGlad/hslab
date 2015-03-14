@@ -1,3 +1,4 @@
+-- http://www.seas.upenn.edu/~cis194/lectures.html
 cabal-version: >= 1.2.3
 name: hslab
 synopsis:
@@ -22,5 +23,12 @@ executable io
     containers,
     bytestring,
     aeson,
+    text
+executable lazy	 
+  main-is: Main.hs
+  hs-source-dirs: src/lazy
+  build-depends:
+    base,
+    containers,
     text
 

@@ -99,4 +99,3 @@ typeOf :: ByteString -> ByteString -> IO ByteString
 typeOf modName funcName =
     getType funcName <$> BS.readFile fname
         where fname = bsToS $ replace "." "-" modName <> ".html"
-
