@@ -29,6 +29,9 @@ swapV i j v = do
   b <- (v !? j)
   return $ v // [(i, b), (j,a)]
 
+swapVunsafe :: Int -> Int -> Vector a -> Vector a
+swapVunsafe i j v = v // [(i, (v!j)), (j,(v!i))]
+
 -- Exercise 2 -----------------------------------------
 
 mapM' :: Monad m => (a -> m b) -> [a] -> m [b]
@@ -68,12 +71,19 @@ randomVecR n r = (replicateM n $ getRandomR r) >>= (\xs -> return $ V.fromList x
 -- Exercise 5 -----------------------------------------
 
 shuffle :: Vector a -> Rnd (Vector a)
-shuffle = undefined
+shuffle v = foldM (\w i -> getRandomR (0, (i-1)) >>= (\j -> return $ swapVunsafe i j w))
+            v
+            (reverse [1..((V.length v) - 1)]) -- (going from 1 to n - 2 would be as good)
 
 -- Exercise 6 -----------------------------------------
 
-partitionAt :: Ord a => Vector a -> Int -> (Vector a, a, Vector a)
-partitionAt = undefined
+partitionAt :: Ord a => Vector a -> Int -> (Vector a, Vector a, Vector a)
+-- XXX Could be faster, using simplest algorithm for now
+-- Note signature differs from one in
+partitionAt v i = let x = v ! i
+                  in (V.filter ((>) x) v,
+                      V.filter ((==) x) v,
+                      V.filter ((<) x) v)
 
 -- Exercise 7 -----------------------------------------
 
@@ -84,31 +94,52 @@ quicksort (x:xs) = quicksort [ y | y <- xs, y < x ]
                    <> (x : quicksort [ y | y <- xs, y >= x ])
 
 qsort :: Ord a => Vector a -> Vector a
-qsort = undefined
+qsort v
+  | (V.length v) == 0 = V.empty
+  | otherwise = let (l, x, r) = partitionAt v 0
+                in V.concat [(qsort l), x, (qsort r)]
 
 -- Exercise 8 -----------------------------------------
 
 qsortR :: Ord a => Vector a -> Rnd (Vector a)
-qsortR = undefined
+qsortR v
+  | (V.length v) == 0 = return V.empty
+  | otherwise = getRandomR (0, (V.length v) - 1)
+                >>= (\at -> let (l, x, r) = (partitionAt v at)
+                            in return $  (qsort l) <> x <> (qsort r))
 
 -- Exercise 9 -----------------------------------------
 
 -- Selection
 select :: Ord a => Int -> Vector a -> Rnd (Maybe a)
-select = undefined
+-- Rank is 0 based
+select i v
+  | (V.length v) == 0 = return Nothing
+  | (V.length v) <= i = return Nothing -- Optimization, not required
+  | otherwise = do at <- getRandomR (0, (V.length v) - 1)
+                   recur (partitionAt v at)
+  where recur (l, x, r)
+          | i < (V.length l) = (select i l)
+          | i < (V.length l) + (V.length x) = return $ Just (x ! 0)
+          | otherwise = (select (i - (V.length l) - (V.length x)) r)
 
 -- Exercise 10 ----------------------------------------
 
 allCards :: Deck
-allCards = undefined
+allCards = do
+           l <- labels
+           s <- suits
+           return $ Card l s
 
 newDeck :: Rnd Deck
-newDeck =  undefined
+newDeck = shuffle allCards
 
 -- Exercise 11 ----------------------------------------
 
 nextCard :: Deck -> Maybe (Card, Deck)
-nextCard = undefined
+nextCard d
+    | V.length d == 0 = Nothing
+    | otherwise = Just (V.head d, V.tail d)
 
 -- Exercise 12 ----------------------------------------
 
@@ -162,7 +193,6 @@ repl s@State{..} | money <= 0  = putStrLn "You ran out of money!"
 main :: IO ()
 main = evalRandIO newDeck >>= repl . State 100
 
-
 -- Tests
 
 runTest :: (Int, [Bool])
@@ -173,6 +203,10 @@ runTest = let results = [
                 (swapV 10 0 (V.fromList [1::Int, 2, 3])) == Nothing,
                 mapM Just [(1::Int)..10] == Just [1..10],
                 getElts [1, 3] (V.fromList [(0::Int)..9]) == Just [1, 3],
-                getElts [21, 3] (V.fromList [(0::Int)..9]) == Nothing]
+                getElts [21, 3] (V.fromList [(0::Int)..9]) == Nothing,
+                partitionAt (V.fromList [5::Int, 2, 8, 3, 6, 1]) 3 ==
+                  (V.fromList [2, 1], V.singleton 3, V.fromList [5, 8, 6]),
+                partitionAt (V.fromList [1::Int, 6, 4, 7, 2, 4]) 2 ==
+                  (V.fromList [1, 2], V.fromList [4, 4], V.fromList [6, 7, 4])]
           in (length $ filter not results, results)
 
