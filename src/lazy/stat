@@ -1,0 +1,6 @@
+rm ./Main
+ghc -fforce-recomp -funbox-strict-fields ./Main.hs -rtsopts 
+./Main +RTS -K268435456 -s 
+./Main +RTS -K268435456 -h -i0.001
+time ./Main +RTS -K268435456
+hp2ps -c Main.hp
