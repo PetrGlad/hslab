@@ -26,10 +26,10 @@ data Suit  = Spade | Heart | Club | Diamond
              deriving (Eq)
 
 instance Show Suit where
-    show Spade   = "\ESC[107;30m\9824 \ESC[0m "
-    show Heart   = "\ESC[107;31m\9829 \ESC[0m "
-    show Club    = "\ESC[107;30m\9827 \ESC[0m "
-    show Diamond = "\ESC[107;31m\9830 \ESC[0m "
+    show Spade   = "\ESC[107;30m\9824 \ESC[0m"
+    show Heart   = "\ESC[107;31m\9829 \ESC[0m"
+    show Club    = "\ESC[107;30m\9827 \ESC[0m"
+    show Diamond = "\ESC[107;31m\9830 \ESC[0m"
 
 data Label = Two   | Three | Four  | Five  | Six   | Seven
            | Eight | Nine  | Ten   | Jack  | Queen | King  | Ace
