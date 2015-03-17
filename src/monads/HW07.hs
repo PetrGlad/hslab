@@ -143,8 +143,14 @@ nextCard d
 
 -- Exercise 12 ----------------------------------------
 
+-- (to try it --- evalRandIO $ newDeck >>= (\d -> return $ getCards 3 d) --- o_O)
 getCards :: Int -> Deck -> Maybe ([Card], Deck)
-getCards = undefined
+getCards 0 d = Just ([], d)
+getCards n d = do
+  (c, d') <- nextCard d
+  (cs, d'') <- getCards (n - 1) d'
+  return (c : cs, d'')
+
 
 -- Exercise 13 ----------------------------------------
 
