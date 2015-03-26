@@ -92,7 +92,7 @@ prop_mod5 = prop_Zahlring
 prop_integer :: Integer -> Integer -> Integer -> Property
 prop_integer = prop_Zahlring
 
--- !!! Addition inverse does not hold
+-- !!! Bool ring is not correct: Addition inverse does not hold
 -- prop_bool :: Bool -> Bool -> Bool -> Property
 -- prop_bool = prop_Zahlring
 
