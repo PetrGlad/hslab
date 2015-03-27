@@ -10,7 +10,7 @@ import Test.QuickCheck
 import qualified Test.QuickCheck.All ()
 
 -- http://stackoverflow.com/questions/7108559/how-to-find-the-frequency-of-characters-in-a-string-in-haskell
-frequencies :: (Eq a, Ord a) => [a] -> [(a, Int)]
+frequencies :: Ord a => [a] -> [(a, Int)]
 frequencies l = map (\x -> (head x, length x)) $ group $ sort l
 
 sortByKey :: Ord b => (a -> b) -> [a] -> [a]
@@ -105,8 +105,14 @@ data Vec a = Vec a a
 det2 :: Num a => Vec a -> Vec a -> a
 det2 (Vec x1 y1) (Vec x2 y2) = x1 * y2 - y1 * x2
 
+dotProd2 :: Num a => Vec a -> Vec a -> a
+dotProd2 (Vec x1 y1) (Vec x2 y2) = x1 * x2 + y1 * y2
+
 toVector :: Num a => Point a -> Point a -> Vec a
 toVector (Point x1 y1) (Point x2 y2) = Vec (x2 - x1) (y2 - y1)
+
+angleLike :: (Fractional a) => Vec a -> Vec a -> a
+angleLike a b = (det2 a b) / (dotProd2 b b)
 
 signumToDirection :: (Num a, Ord a) => a -> Direction
 signumToDirection x
@@ -114,6 +120,7 @@ signumToDirection x
   | x < 0 = DRight
   | otherwise = DStraight
 
+-- Write a function that calculates the turn made by three 2D points and returns a Direction.
 angleDirection :: (Num a, Ord a) => Point a -> Point a -> Point a -> Direction
 angleDirection a b c = let ab = toVector a b
                            bc = toVector b c
@@ -131,6 +138,9 @@ prop_angleDirection2 x = (signumToDirection x) == (angleDirection a b c)
                               b = (Point 1 (-x))
                               c = (Point 2 0)
 
+-- Define a function that takes a list of 2D points and computes the direction of each successive triple.
+-- Given a list of points [a,b,c,d,e], it should begin by computing the turn made by [a,b,c],
+-- then the turn made by [b,c,d], then [c,d,e]. Your function should return a list of Direction.
 angleDirections :: (Num a, Ord a) => [Point a] -> [Direction]
 angleDirections ps = zipWith3 angleDirection ps (drop 1 ps) (drop 2 ps)
 
@@ -138,8 +148,24 @@ prop_angleDirections_rights :: Int -> Bool
 prop_angleDirections_rights n = all ((==) DRight) (angleDirections ps)
   where ps = take n (cycle [Point (0::Int) 0, Point 0 1, Point 1 1, Point 1 0])
 
--- https://en.wikipedia.org/wiki/Graham_scan
-convexHull = undefined
+-- Using the code from the preceding three exercises, implement Graham's scan algorithm
+-- for the convex hull of a set of 2D points. You can find good description of what a convex hull is,
+-- and how the Graham scan algorithm should work, on Wikipedia https://en.wikipedia.org/wiki/Graham_scan
+convexHull :: (Fractional a, Ord a) => [Point a] -> [Point a]
+-- XXX This can be optimized for speed.
+convexHull [] = []
+convexHull ps = let start = head $ sortByKey (\(Point x y) -> (x, y)) ps
+                    ordered = sortByKey (\p -> angleLike (Vec 1 0) (toVector start p)) $ tail ps
+                in grahamScan $ concat [ordered, [start]]
+
+grahamScan :: (Fractional a, Ord a) => [Point a] -> [Point a]
+grahamScan [] = []
+grahamScan [a] = [a]
+grahamScan [a, b] = [a, b]
+grahamScan (a : b : c : ps) = a : (if DRight == (angleDirection a b c)
+                                   then grahamScan $ c : ps
+                                   else grahamScan $ b : c : ps)
+
 
 -- Tests
 
