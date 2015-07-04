@@ -31,4 +31,25 @@ executable lazy
     base,
     containers,
     text
+executable blocks
+  main-is: Main.hs
+  hs-source-dirs: src/blocks
+  build-depends:
+    base,
+    random,
+    MonadRandom,
+    ansi-terminal
+--    containers,
+--    text
+executable robominer
+  main-is: Main.hs
+  hs-source-dirs: src/robominer
+  build-depends:
+    base,
+    random,
+    MonadRandom,
+    ansi-terminal
+--    containers,
+--    text
+
 
