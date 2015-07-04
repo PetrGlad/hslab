@@ -79,7 +79,7 @@ shuffle v = foldM (\w i -> getRandomR (0, (i-1)) >>= (\j -> return $ swapVunsafe
 
 partitionAt :: Ord a => Vector a -> Int -> (Vector a, Vector a, Vector a)
 -- XXX Could be faster, using simplest algorithm for now
--- Note signature differs from one in
+-- Note signature differs from one in task description
 partitionAt v i = let x = v ! i
                   in (V.filter ((>) x) v,
                       V.filter ((==) x) v,
