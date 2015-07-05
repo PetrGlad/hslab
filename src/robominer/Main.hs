@@ -33,9 +33,9 @@ genMine (maxX, maxY) = do
     y <- getRandomR (0, maxY - 1)
     return (x, y)
 
-genMines :: Size -> IO Mines
-genMines size = do
-      mines <- evalRandIO $ sequence $ replicate 10  $ genMine size
+genMines :: Size -> Int -> IO Mines
+genMines size cnt = do
+      mines <- evalRandIO $ sequence $ replicate cnt  $ genMine size
       return $ S.fromList mines
 
 genField :: Size -> Field
@@ -75,7 +75,7 @@ step mines field pos
 
 neighbourDeltas :: [PosDelta]
 neighbourDeltas = [(x, y) | x <- d, y <- d, x /= 0 || y /= 0]
-  where d = [-1, 0, 1]
+  where d = [-1..1]
 
 shiftPos :: Pos -> PosDelta -> Pos
 shiftPos (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
@@ -90,27 +90,77 @@ genIntel mines = foldl updateNeighbours M.empty (S.toList mines)
         updateCount Nothing = Just 1
         updateCount (Just x) = Just (x + 1)
 
-filterIntel :: Intel -> Field -> Intel
-filterIntel intel field = M.filterWithKey (\pos cnt -> (M.lookup pos field) == (Just CFree)) intel
+-- The cell is already known as not containing mine
+isFreeCell :: Field -> Pos -> Bool
+isFreeCell field pos = (M.lookup pos field) == (Just CFree)
 
+filterLayer :: Layer a -> Field -> Layer a
+filterLayer intel field = M.filterWithKey (\pos cnt -> isFreeCell field pos) intel
+
+-----------------------------------------------------------
 
 chooseProbePosition :: Field -> Intel -> Pos
-chooseProbePosition field intel = head $ fmap fst reordered
+chooseProbePosition field intel = head $ fmap fst unknowns
   where
-  
-    -- TODO Correct this !!!!!!!!!!!!!!!!!!!!!!!!!! first should test neighbours of empty slots
-
     unknowns = M.toList $ M.filter (CUnknown==) field
-    splitted = L.partition
-      (\(pos, c) -> case M.lookup pos intel of
-                      Nothing -> True
-                      Just 0 -> True
-                      Just _ -> False)
-      unknowns
-    reordered = (fst splitted) ++ (snd splitted)
+    -- TODO Implement
+    -- 1 Calc envelope (one side is opened - connected side is in unknown)
+    -- 2 Choose cell with fewest connections
+    -- 3 select a combination
+    -- 4 follow connections propagating with reqstrictions until no more connections or no appropriate combination
+    -- 5 If all iis satisfied - select cell& exit. Otherwise choose new combination
+    -- 6 Try next cell in (2)
+
+--     splitted = L.partition
+--       (\(pos, c) -> case M.lookup pos intel of
+--                       Nothing -> True
+--                       Just 0 -> True
+--                       Just _ -> False)
+--       unknowns
+--     reordered = (fst splitted) ++ (snd splitted)
+
+type CellPair = (Pos, Pos)
+
+-- Defines index order of positions.
+enumPositions :: Size -> [Pos]
+enumPositions (width, height) = [(col, row) | col <- [0..(width-1)], row <- [0..(height-1)]]
+
+inRange :: Int -> Int -> Int -> Bool
+inRange lo hi x = x >= lo && x < hi
+
+inBoard :: Size -> Pos -> Bool
+inBoard (w, h) (x,y) = (inRange 0 w x) && (inRange 0 h y)
+
+-- Produces (cell, neighbour) relations
+intelMatrix :: Size -> [Pos] -> [CellPair]
+intelMatrix s ps = concatMap (\p -> fmap (\n -> (p, n))
+                                         (filter (inBoard s) (nearPositions p)))
+                                  ps
+
+-- Limit relations to ones we can reason about on given field
+visibleIntelMatrix :: [CellPair] -> Field -> [CellPair]
+visibleIntelMatrix pairs field = filter ((isFreeCell field) . snd) pairs
+
+-- permutations n = sequence . replicate n
+
+-- http://stackoverflow.com/a/22577148/117220
+combinations :: Int -> [a] -> [[a]]
+combinations k xs = combinations' (length xs) k xs
+  where combinations' n k' l@(y:ys)
+          | k' == 0   = [[]]
+          | k' >= n   = [l]
+          | null l    = []
+          | otherwise = map (y :) (combinations' (n - 1) (k' - 1) ys) ++ combinations' (n - 1) k' ys
 
 
+-- Binomial coefficient
+-- http://stackoverflow.com/a/6806997/117220
+chooseCount :: Int -> Int -> Int
+chooseCount n 0 = 1
+chooseCount 0 k = 0
+chooseCount n k = chooseCount (n-1) (k-1) * n `div` k
 
+-----------------------------------------------------------
 
 moveCursorBelow :: Size -> IO ()
 moveCursorBelow boardSize = setCursorPosition (snd boardSize) 0
@@ -132,7 +182,7 @@ renderBoard field intel mines =
 
 gameStep :: Size -> Mines -> Field -> IO ()
 gameStep fieldSize mines field =
-  let intl = filterIntel (genIntel mines) field
+  let intl = filterLayer (genIntel mines) field
       probePos = (chooseProbePosition field intl)
       newField = step mines field probePos
       showFinalStatus message = do
@@ -142,6 +192,8 @@ gameStep fieldSize mines field =
     -- CC.threadDelay 300000
     renderBoard field intl mines
     moveCursorBelow fieldSize -- Move it away so it does not obstruct cells
+    putStrLn $ show $ visibleIntelMatrix (intelMatrix fieldSize $ enumPositions fieldSize) field
+    c <- getChar
     case newField of
       Nothing -> showFinalStatus ("Tripped on mine at " ++ (show probePos))
       Just f ->
@@ -151,8 +203,8 @@ gameStep fieldSize mines field =
 
 main :: IO ()
 main =
-  let dims = (20, 10)
+  let dims = (8, 4)
   in do
     clearScreen
-    mines <- genMines dims
+    mines <- genMines dims 5
     gameStep dims mines (genField dims)
