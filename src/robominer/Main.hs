@@ -5,9 +5,11 @@ import Control.Monad.Random
 
 import Data.Map (Map)
 import qualified Data.Map as M
+import qualified Data.MultiMap as Mm
 import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.List as L
+import qualified Data.Tuple as Tu
 -- import Data.Sequence
 
 import System.Console.ANSI
@@ -99,16 +101,29 @@ filterLayer intel field = M.filterWithKey (\pos cnt -> isFreeCell field pos) int
 
 -----------------------------------------------------------
 
-chooseProbePosition :: Field -> Intel -> Pos
-chooseProbePosition field intel = head $ fmap fst unknowns
+chooseProbePosition :: Size -> Field -> Intel -> Pos
+chooseProbePosition fieldSize field intel = choice
   where
+    -- Fallback implementation
     unknowns = M.toList $ M.filter (CUnknown==) field
+    choice0 = head $ fmap fst unknowns
+
     -- TODO Implement
+    intelRel = intelMatrix fieldSize (enumPositions fieldSize)
+    edgeMinesMatrix = probableMinesMatrix (visibleIntelMatrix intelRel field) field
+    neighbourToMine = groupByNeighbour edgeMinesMatrix
+    mineToNeighbour = groupByFirst edgeMinesMatrix
+    choice = if Mm.null neighbourToMine
+             then choice0
+              else (head . snd . head . M.toList . Mm.toMap) neighbourToMine -- Stub -- TODO Implement
+--              else
+--                 consistentCombinations mineToNeighbour neighbourToMine intel
+
     -- 1 Calc envelope (one side is opened - connected side is in unknown)
     -- 2 Choose cell with fewest connections
     -- 3 select a combination
     -- 4 follow connections propagating with reqstrictions until no more connections or no appropriate combination
-    -- 5 If all iis satisfied - select cell& exit. Otherwise choose new combination
+    -- 5 If all is satisfied - select cell& exit. Otherwise choose new combination
     -- 6 Try next cell in (2)
 
 --     splitted = L.partition
@@ -138,8 +153,59 @@ intelMatrix s ps = concatMap (\p -> fmap (\n -> (p, n))
                                   ps
 
 -- Limit relations to ones we can reason about on given field
+-- (i.e. a relation neighbour is visible/uncovered)
 visibleIntelMatrix :: [CellPair] -> Field -> [CellPair]
 visibleIntelMatrix pairs field = filter ((isFreeCell field) . snd) pairs
+
+probableMinesMatrix :: [CellPair] -> Field -> [CellPair]
+probableMinesMatrix pairs field = filter (not . (isFreeCell field) . fst) pairs
+
+groupByFirst :: Ord a => [(a, b)] -> Mm.MultiMap a b
+groupByFirst = foldl (\mm (k,v) -> Mm.insert k v mm) Mm.empty
+
+groupByNeighbour :: [CellPair] -> Mm.MultiMap Pos Pos
+groupByNeighbour = groupByFirst . (map Tu.swap)
+
+getIntel :: Intel -> Pos -> Int
+getIntel i p = case M.lookup p i of
+                 Just x -> x
+                 Nothing -> 0
+
+-- (Map MinePosition [Neighbours]) -> Neighbour/intel cell -> list of other Neighbour/intel cells affected
+getLinkedNeighbours :: Mm.MultiMap Pos Pos -> Pos -> [Pos]
+getLinkedNeighbours mineToNeighbour pos = Mm.lookup mineToNeighbour
+
+type MineLayout = Map Pos Bool
+
+-- Find some mine combinations that are consistent with known Intel
+-- (Map Neighbour [Mine positions]) -> intel -> consistent mine placements
+consistentCombinations :: Mm.MultiMap Pos Pos -> Mm.MultiMap Pos Pos -> Intel -> [Set Pos]
+consistentCombinations mineToNeighbour neighbourToMine intel =
+  let
+      -- We cannot enumerate all combinations except with smallest cases. Using heuristics.
+      -- TODO Try cells with least number of combinations first (use chooseCount)
+      -- orderedRels = L.sortBy (\x y -> compare (snd y) (snd x)) $ Mm.toList neighbourToMine
+
+      -- (A) TODO Calculate all linked neighbourhood then try to satisfy it
+      -- -- (Doing this in 2 separate steps would simplify this function)
+      -- TODO Then we could use:
+      -- -- 1. List of linked neighbours.
+      -- -- 2. Key set of accumulated MineLayout - to see which positions are already taken while generating new layouts.
+      -- -- 3. neighbourToMine - to generate consistent layouts together with 2.
+      -- TODO If after picking linked neighbours remain some more then repeat procedure (A)
+      -- TODO Let's try returning single layout first. Then we could rewrite this to find all suitable.
+      constrainedCombos :: Mm.Multimap Pos Pos -> Intel -> MineLayout -> [Pos] -> MineLayout
+      -- Seed testPositions with single item list. testPositions - neigbours to be satisfied by intel
+      constrainedCombos nToM intel totalLayout testPositions@(tp : tps) =
+        -- Generate only those combinations that are consistent in this position.
+        123456
+        where
+           linkedNeighbours = S.fromList $ concatMap getLinkedNeighbours (M.lookup testPos nToM)
+           -- TODO Fix free cells in combination as well as taken ones
+           -- since any changes to chosen set will make it inconsistent.
+           tpCombinations = combinations ("tp linked mine positions that are not already in totalLayout")
+
+  in constrainedCombos orderedRels S.empty
 
 -- permutations n = sequence . replicate n
 
@@ -152,13 +218,16 @@ combinations k xs = combinations' (length xs) k xs
           | null l    = []
           | otherwise = map (y :) (combinations' (n - 1) (k' - 1) ys) ++ combinations' (n - 1) k' ys
 
-
 -- Binomial coefficient
 -- http://stackoverflow.com/a/6806997/117220
 chooseCount :: Int -> Int -> Int
 chooseCount n 0 = 1
 chooseCount 0 k = 0
 chooseCount n k = chooseCount (n-1) (k-1) * n `div` k
+
+-- It would be better to have this in multimap lib
+instance (Show a, Show b) => Show (Mm.MultiMap a b) where
+  show = show . Mm.toMap
 
 -----------------------------------------------------------
 
@@ -182,18 +251,29 @@ renderBoard field intel mines =
 
 gameStep :: Size -> Mines -> Field -> IO ()
 gameStep fieldSize mines field =
-  let intl = filterLayer (genIntel mines) field
-      probePos = (chooseProbePosition field intl)
+  let intel = filterLayer (genIntel mines) field
+      probePos = (chooseProbePosition fieldSize field intel)
       newField = step mines field probePos
       showFinalStatus message = do
         showStatus fieldSize message
         return ()
   in do
     -- CC.threadDelay 300000
-    renderBoard field intl mines
+    clearScreen
+    renderBoard field intel mines
     moveCursorBelow fieldSize -- Move it away so it does not obstruct cells
-    putStrLn $ show $ visibleIntelMatrix (intelMatrix fieldSize $ enumPositions fieldSize) field
+
+    -------------------------
+    let intelRel = intelMatrix fieldSize (enumPositions fieldSize)
+    let vim = (visibleIntelMatrix intelRel field)
+    putStrLn $ show $ vim
+    let edgeRelations = groupByNeighbour $ probableMinesMatrix vim field
+    putStrLn $ show $ edgeRelations
+    putStrLn $ show $ consistentCombinations edgeRelations intel
+    -------------------------
+
     c <- getChar
+
     case newField of
       Nothing -> showFinalStatus ("Tripped on mine at " ++ (show probePos))
       Just f ->

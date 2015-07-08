@@ -48,7 +48,8 @@ executable robominer
     base,
     random,
     MonadRandom,
-    ansi-terminal
+    ansi-terminal,
+    multimap
 --    containers,
 --    text
 
