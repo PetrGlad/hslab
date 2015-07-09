@@ -12,6 +12,8 @@ import qualified Data.List as L
 import qualified Data.Tuple as Tu
 -- import Data.Sequence
 
+import qualified Control.Exception as CE
+
 import System.Console.ANSI
 import System.IO
 
@@ -175,7 +177,16 @@ getIntel i p = case M.lookup p i of
 getLinkedNeighbours :: Mm.MultiMap Pos Pos -> Pos -> [Pos]
 getLinkedNeighbours mineToNeighbour pos = Mm.lookup mineToNeighbour
 
+-- pos->True mine, pos->False no mine
+-- (Fixes free cells in combination as well as taken ones
+-- since any changes to chosen set will make it inconsistent.
+-- So we do not change existing layout during test)
 type MineLayout = Map Pos Bool
+
+-- Every program should ensure this.
+justIsTrue x = case x of
+                 Just _ -> True
+                 Nothing -> False
 
 -- Find some mine combinations that are consistent with known Intel
 -- (Map Neighbour [Mine positions]) -> intel -> consistent mine placements
@@ -183,7 +194,7 @@ consistentCombinations :: Mm.MultiMap Pos Pos -> Mm.MultiMap Pos Pos -> Intel ->
 consistentCombinations mineToNeighbour neighbourToMine intel =
   let
       -- We cannot enumerate all combinations except with smallest cases. Using heuristics.
-      -- TODO Try cells with least number of combinations first (use chooseCount)
+      -- TODO Try cells with least number of combinations first (sort by asc choiceCount)
       -- orderedRels = L.sortBy (\x y -> compare (snd y) (snd x)) $ Mm.toList neighbourToMine
 
       -- (A) TODO Calculate all linked neighbourhood then try to satisfy it
@@ -193,17 +204,31 @@ consistentCombinations mineToNeighbour neighbourToMine intel =
       -- -- 2. Key set of accumulated MineLayout - to see which positions are already taken while generating new layouts.
       -- -- 3. neighbourToMine - to generate consistent layouts together with 2.
       -- TODO If after picking linked neighbours remain some more then repeat procedure (A)
-      -- TODO Let's try returning single layout first. Then we could rewrite this to find all suitable.
-      constrainedCombos :: Mm.Multimap Pos Pos -> Intel -> MineLayout -> [Pos] -> MineLayout
+      -- TODO Move constrainedCombos to top level?
+      constrainedCombos :: Mm.Multimap Pos Pos -> Intel -> MineLayout -> [Pos] -> Maybe MineLayout
       -- Seed testPositions with single item list. testPositions - neigbours to be satisfied by intel
-      constrainedCombos nToM intel totalLayout testPositions@(tp : tps) =
+      constrainedCombos nToM intel currentLayout testPositions@(testPos : tps) =
         -- Generate only those combinations that are consistent in this position.
-        123456
+        if isFeasible
+          -- TODO Let's try returning single layout first. Then we could rewrite this to find all suitable.
+          then L.find justIsTrue $ fmap testCombo tpCombinations
+          else Nothing
         where
-           linkedNeighbours = S.fromList $ concatMap getLinkedNeighbours (M.lookup testPos nToM)
-           -- TODO Fix free cells in combination as well as taken ones
-           -- since any changes to chosen set will make it inconsistent.
-           tpCombinations = combinations ("tp linked mine positions that are not already in totalLayout")
+          linkedMinePoss = (M.lookup testPos nToM)
+          tpIntel = getIntel intel testPos
+          -- Find related mine positions that are already in layout by splitting into (taken, available)
+          lmp = L.partition (\p -> M.member p currentLayout) linkedMinePoss
+          takenCount = L.foldl (\x -> M.findWithDefault 0 x currentLayout) 0 (fst lmp)
+          isFeasible = (tpIntel - takenCount) <= (L.length (snd lmp))
+          tpCombinations = combinations (tpIntel - takenCount) (snd lmp)
+
+          linkedNeighbours = S.fromList $ concatMap getLinkedNeighbours linkedMinePoss
+          -- In case of cycle we should just get empty combo and move on
+          -- (if this does not work - find other test to avoid already visited neighbours)
+          -- Recursive call returning some consistent layout:
+          testCombo posLayout = constrainedCombos nToM intel
+                        (M.union currentLayout posLayout)
+                        (L.concat linkedNeighbours testPositions)
 
   in constrainedCombos orderedRels S.empty
 
@@ -220,10 +245,10 @@ combinations k xs = combinations' (length xs) k xs
 
 -- Binomial coefficient
 -- http://stackoverflow.com/a/6806997/117220
-chooseCount :: Int -> Int -> Int
-chooseCount n 0 = 1
-chooseCount 0 k = 0
-chooseCount n k = chooseCount (n-1) (k-1) * n `div` k
+choiceCount :: Int -> Int -> Int
+choiceCount n 0 = 1
+choiceCount 0 k = 0
+choiceCount n k = chooseCount (n-1) (k-1) * n `div` k
 
 -- It would be better to have this in multimap lib
 instance (Show a, Show b) => Show (Mm.MultiMap a b) where
