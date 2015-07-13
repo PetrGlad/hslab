@@ -9,6 +9,7 @@ import qualified Control.Monad.Random as CMR
 import Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.MultiMap as Mm
+import qualified Data.MultiSet as Ms
 import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.List as L
@@ -114,7 +115,7 @@ chooseProbePosition fieldSize field intel = choice
 
     -- TODO Implement
     intelRel = intelMatrix fieldSize (enumPositions fieldSize)
-    edgeMinesMatrix = probableMinesMatrix (visibleIntelMatrix intelRel field) field
+    edgeMinesMatrix = discoverableMinesMatrix (visibleIntelMatrix intelRel field) field
     neighbourToMine = groupBySecond edgeMinesMatrix
     mineToNeighbour = groupByFirst edgeMinesMatrix
     choice =
@@ -146,8 +147,8 @@ intelMatrix s ps = concatMap (\p -> fmap (\n -> (p, n))
 visibleIntelMatrix :: [CellPair] -> Field -> [CellPair]
 visibleIntelMatrix pairs field = filter ((isFreeCell field) . snd) pairs
 
-probableMinesMatrix :: [CellPair] -> Field -> [CellPair]
-probableMinesMatrix pairs field = filter (not . (isFreeCell field) . fst) pairs
+discoverableMinesMatrix :: [CellPair] -> Field -> [CellPair]
+discoverableMinesMatrix pairs field = filter (not . (isFreeCell field) . fst) pairs
 
 groupByFirst :: Ord a => [(a, b)] -> Mm.MultiMap a b
 groupByFirst = foldl (\mm (k,v) -> Mm.insert k v mm) Mm.empty
@@ -171,6 +172,11 @@ justIsTrue :: Maybe a -> Bool
 justIsTrue x = case x of
                  Just _ -> True
                  Nothing -> False
+
+boolTo01 :: Bool -> Int
+boolTo01 x = case x of
+              True -> 1
+              False -> 0
 
 -- Find some mine combinations that are consistent with known Intel
 -- (Map Neighbour [Mine positions]) -> intel -> consistent mine placements
@@ -216,7 +222,7 @@ consistentCombinations edgeRelations intel =
     -- Seed testPositions with single item list. testPositions - neigbours to be satisfied by intel
     constrainedCombos currentLayout [] = [currentLayout]
     constrainedCombos currentLayout (testPos : tps) =
-        -- Generate only those combinations that are consistent in this position.
+        -- Generate only combinations that are consistent in this position.
         if isFeasible
           then map (\c -> M.union currentLayout c)
                    (concatMap testCombo tpLayouts)
@@ -228,28 +234,26 @@ consistentCombinations edgeRelations intel =
           takenMps = (fst lmp)
           availableMps = (snd lmp)
           takenCount = L.foldl (\s x -> s +
-                                  (trueTo1 (M.findWithDefault False x currentLayout)))
+                                  (boolTo01 (M.findWithDefault False x currentLayout)))
                                0
                                takenMps
-          trueTo1 x = case x of
-                        True -> 1
-                        False -> 0
           isFeasible = (tpIntel - takenCount) <= (L.length availableMps)
           tpCombinations :: [[Pos]]
           tpCombinations = combinations (tpIntel - takenCount) availableMps
           -- Convert combination of present mines to mine layout:
           tpLayouts :: [MineLayout]
           tpLayouts = map
-              (\tpc -> M.fromList $ fmap (\x -> (x, L.elem x availableMps)) tpc)
+              (\tpc -> M.fromList $ fmap (\x -> (x, L.elem x tpc)) availableMps)
               tpCombinations
 
           -- In case of cycle we should just get empty combo and move on
-          -- (if this does not work - find other test to avoid already visited neighbours)
           -- Recursive call returning some consistent layout:
           testCombo :: MineLayout -> [MineLayout]
           testCombo posLayout = constrainedCombos (M.union currentLayout posLayout) tps
 
 -- permutations n = sequence . replicate n
+frequencies :: Ord a => [a] -> [(a, Int)]
+frequencies = Ms.toOccurList . Ms.fromList
 
 -- http://stackoverflow.com/a/22577148/117220
 combinations :: Int -> [a] -> [[a]]
@@ -264,8 +268,8 @@ combinations k xs = combinations' (length xs) k xs
 -- Binomial coefficient
 -- http://stackoverflow.com/a/6806997/117220
 choiceCount :: Int -> Int -> Int
-choiceCount _ 0 = 1
-choiceCount 0 _ = 0
+choiceCount _n 0 = 1
+choiceCount 0 _k = 0
 choiceCount n k = choiceCount (n-1) (k-1) * n `div` k
 
 -- It would be better to have this in multimap lib
@@ -295,13 +299,12 @@ renderBoard field intel mines =
 gameStep :: Size -> Mines -> Field -> IO ()
 gameStep fieldSize mines field =
   let intel = filterLayer (genIntel mines) field
-      probePos = (chooseProbePosition fieldSize field intel)
-      newField = step mines field probePos
+--       probePos = (chooseProbePosition fieldSize field intel)
+--       newField = step mines field probePos
       showFinalStatus message = do
         showStatus fieldSize message
         return ()
   in do
-    -- CC.threadDelay 300000
     clearScreen
     renderBoard field intel mines
     moveCursorBelow fieldSize -- Move it away so it does not obstruct cells
@@ -310,11 +313,32 @@ gameStep fieldSize mines field =
     let intelRel = intelMatrix fieldSize (enumPositions fieldSize)
     let viMatrix = (visibleIntelMatrix intelRel field)
     putStrLn $ show $ viMatrix
-    let edgeRelations = probableMinesMatrix viMatrix field -- "Edge" between explored and unknown cells
+    let edgeRelations = discoverableMinesMatrix viMatrix field -- "Edge" between explored and unknown cells
     putStrLn $ show $ edgeRelations
-    putStrLn $ show $ consistentCombinations edgeRelations intel
+    let combos = consistentCombinations edgeRelations intel
+    putStrLn $ show $ combos
 
+    -- TODO (bug) There are no (_, False) pairs in mine layouts
+    let freqs = L.sortBy (\(_p1,f1) (_p2,f2) -> compare f1 f2)
+                $ M.toList $ M.map sum $ Mm.toMap $ Mm.fromList $ fmap (\(p,t) -> (p, boolTo01 t))
+                $ L.concat $ fmap M.toList combos
+
+    putStrLn $ show $ L.length combos
+    putStrLn $ show $ freqs
+    -- TODO Implement heuristic based on total number of mines (that number is not in intel yet):
+    -- If probability of mine on "inner" unexplored cell is less than on the edge then choose one such
+    -- cell randomly.
+
+    -- let sureProbePairs = takeWhile ((0==) . snd) freqs
+    -- let probePairs = if L.null sureProbePairs then
+    let probePos = (case freqs of
+                      [] -> (0,0)
+                      ((p,_c):_xs) -> p)
+    let newField = step mines field probePos
+
+    -- CC.threadDelay 300000
     _ <- getChar
+
     -------------------------
 
     case newField of
