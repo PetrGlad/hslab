@@ -14,6 +14,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.List as L
 import qualified Data.Tuple as Tu
+import qualified Control.Monad as Cm
 -- import Data.Sequence
 
 import System.Console.ANSI
@@ -180,6 +181,7 @@ boolTo01 x = case x of
 
 -- Find some mine combinations that are consistent with known Intel
 -- (Map Neighbour [Mine positions]) -> intel -> consistent mine placements
+-- (XXX The algorithm in connectedSets can be optimized for speed)
 consistentCombinations :: [CellPair] -> Intel -> [MineLayout]
 consistentCombinations edgeRelations intel =
   concatMap (\ns -> constrainedCombos M.empty (S.toList ns)) connectedSets
@@ -194,10 +196,7 @@ consistentCombinations edgeRelations intel =
     linkedMinePoss p = (Mm.lookup p neighbourToMine)
     linkedNeighbours p = S.fromList $ concatMap getLinkedNeighbours (linkedMinePoss p)
 
-    -- TODO Try cells with least number of combinations first (sort by asc choiceCount)
-    -- -- L.sortBy (\x y -> compare (snd y) (snd x)) $ Mm.toList neighbourToMine
     -- (Likely connectedSets could be implicitly calculated in constrainedCombos - but that would complicate code)
-    -- (The algorithm in connectedSets can be optimized for speed)
     connectedSets :: [Set Pos]
     connectedSets = split (S.toList (M.keysSet (Mm.toMap neighbourToMine))) []
       where
@@ -243,8 +242,8 @@ consistentCombinations edgeRelations intel =
           -- Convert combination of present mines to mine layout:
           tpLayouts :: [MineLayout]
           tpLayouts = map
-              (\tpc -> M.fromList $ fmap (\x -> (x, L.elem x tpc)) availableMps)
-              tpCombinations
+            (\tpc -> M.fromList $ fmap (\x -> (x, L.elem x tpc)) availableMps)
+            tpCombinations
 
           -- In case of cycle we should just get empty combo and move on
           -- Recursive call returning some consistent layout:
@@ -299,50 +298,70 @@ renderBoard field intel mines =
 gameStep :: Size -> Mines -> Field -> IO ()
 gameStep fieldSize mines field =
   let intel = filterLayer (genIntel mines) field
+      minesCount = S.size mines
+      ------------------------------------------
 --       probePos = (chooseProbePosition fieldSize field intel)
 --       newField = step mines field probePos
       showFinalStatus message = do
         showStatus fieldSize message
         return ()
   in do
-    clearScreen
+    -- clearScreen
     renderBoard field intel mines
     moveCursorBelow fieldSize -- Move it away so it does not obstruct cells
 
     -------------------------
     let intelRel = intelMatrix fieldSize (enumPositions fieldSize)
     let viMatrix = (visibleIntelMatrix intelRel field)
-    putStrLn $ show $ viMatrix
+--     putStrLn $ show $ viMatrix
     let edgeRelations = discoverableMinesMatrix viMatrix field -- "Edge" between explored and unknown cells
-    putStrLn $ show $ edgeRelations
+--     putStrLn $ show $ edgeRelations
     let combos = consistentCombinations edgeRelations intel
-    putStrLn $ show $ combos
+--     putStrLn $ show $ combos
 
-    -- TODO (bug) There are no (_, False) pairs in mine layouts
-    let freqs = L.sortBy (\(_p1,f1) (_p2,f2) -> compare f1 f2)
-                $ M.toList $ M.map sum $ Mm.toMap $ Mm.fromList $ fmap (\(p,t) -> (p, boolTo01 t))
-                $ L.concat $ fmap M.toList combos
+    -- TODO Implement mask with found mines for optimization and remaining mine count in heuristics.
 
-    putStrLn $ show $ L.length combos
-    putStrLn $ show $ freqs
-    -- TODO Implement heuristic based on total number of mines (that number is not in intel yet):
     -- If probability of mine on "inner" unexplored cell is less than on the edge then choose one such
     -- cell randomly.
+    -- Choose "step into unknown" position:
+    let unknownMargin = Mm.keysSet (groupByFirst edgeRelations)
+    let farField = S.toList $ M.keysSet $ M.filterWithKey (\p c -> (c == CUnknown) && (not $ S.member p unknownMargin)) field
+    let farPoss = case farField of
+                        [] -> []
+                        (x:_xs) -> [(x, fromIntegral minesCount -- FIXME - here should be number of remaining mines
+                         / (fromIntegral $ L.length farField))]
 
-    -- let sureProbePairs = takeWhile ((0==) . snd) freqs
-    -- let probePairs = if L.null sureProbePairs then
-    let probePos = (case freqs of
-                      [] -> (0,0)
-                      ((p,_c):_xs) -> p)
-    let newField = step mines field probePos
+    let freqGroups = Mm.toMap $ Mm.fromList $ fmap (\(p,t) -> (p, boolTo01 t))
+                     $ L.concat $ fmap M.toList combos
+
+    -- freqs :: [(Pos, Float)]
+    let freqs = L.sortBy (\(_p1,f1) (_p2,f2) -> compare f1 f2)
+                $ L.concat [
+                    (M.toList $ M.map (\cs -> ((fromIntegral (sum cs))::Float) / (fromIntegral (M.size freqGroups)))
+                       freqGroups),
+                    farPoss]
+
+    putStrLn $ show $ L.length combos
+    -- putStrLn $ show $ freqs
+
+    -- noMines are sure steps so we'll do them in batch.
+    let noMines = takeWhile ((0==) . snd) freqs
+    let probePoss = fmap fst $
+          case noMines of
+            [] -> (case freqs of
+                     [] -> [((0,0), 1)]
+                     x -> x)
+            x -> x
+
+    let newField = Cm.foldM (step mines) field probePoss
 
     -- CC.threadDelay 300000
-    _ <- getChar
+    -- _ <- getChar
 
     -------------------------
 
     case newField of
-      Nothing -> showFinalStatus ("Tripped on mine at " ++ (show probePos))
+      Nothing -> showFinalStatus ("Tripped on mine at " ++ (show probePoss))
       Just f ->
         if isGameComplete mines f
           then showFinalStatus "Done"
@@ -350,8 +369,8 @@ gameStep fieldSize mines field =
 
 main :: IO ()
 main =
-  let dims = (8, 4)
+  let dims = (64, 32)
   in do
     clearScreen
-    mines <- genMines dims 5
+    mines <- genMines dims 250
     gameStep dims mines (genField dims)
